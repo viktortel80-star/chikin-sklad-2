@@ -1,7 +1,3 @@
 <resources>
-    <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#2E7D32</item>
-        <item name="android:navigationBarColor">#000000</item>
-    </style>
+    <style name="Theme.ChickenWarehouse" parent="android:style/Theme.Material.Light.NoActionBar"/>
 </resources>
