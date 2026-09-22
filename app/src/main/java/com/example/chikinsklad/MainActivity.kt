@@ -1,11 +1,10 @@
 package com.example.chikinsklad
 
-import android.app.Activity
 import android.app.AlertDialog
+import android.app.DatePickerDialog
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.Typeface
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
@@ -18,1556 +17,1448 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-class MainActivity : Activity() {
+class MainActivity : android.app.Activity() {
 
-    private val prefs by lazy {
-        getSharedPreferences("chikin_sklad_data", MODE_PRIVATE)
-    }
+    private val prefsName = "chikin_sklad_data"
+    private lateinit var prefs: android.content.SharedPreferences
 
-    private lateinit var content: LinearLayout
+    private val operationTypes = arrayOf(
+        "Купівля корму",
+        "Продаж яєць",
+        "Продаж птиці",
+        "Інші витрати",
+        "Інший дохід",
+        "Інкубація"
+    )
 
-    private val dateFormat =
-        SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
-
-    private val monthFormat =
-        SimpleDateFormat("yyyy-MM", Locale.getDefault())
+    data class Operation(
+        val id: Long,
+        val date: String,
+        val type: String,
+        val description: String,
+        val quantity: Double,
+        val amount: Double
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        createMainScreen()
+        prefs = getSharedPreferences(prefsName, MODE_PRIVATE)
+
+        showMainMenu()
     }
 
-    // =========================================================
-    // ГОЛОВНИЙ ЕКРАН
-    // =========================================================
+    // ------------------------------------------------------------
+    // ОСНОВНІ ДОПОМІЖНІ ФУНКЦІЇ
+    // ------------------------------------------------------------
 
-    private fun createMainScreen() {
+    private fun dp(value: Int): Int {
+        return (value * resources.displayMetrics.density).toInt()
+    }
 
+    private fun rootLayout(): LinearLayout {
+        val layout = LinearLayout(this)
+        layout.orientation = LinearLayout.VERTICAL
+        layout.setPadding(dp(16), dp(70), dp(16), dp(20))
+        layout.gravity = Gravity.TOP
+        return layout
+    }
+
+    private fun scrollLayout(): ScrollView {
         val scroll = ScrollView(this)
-
-        content = LinearLayout(this)
-        content.orientation = LinearLayout.VERTICAL
-        content.setPadding(
-            dp(20),
-            dp(70),
-            dp(20),
-            dp(30)
-        )
-
-        scroll.addView(content)
-
-        setContentView(scroll)
-
-        showHome()
+        scroll.setPadding(0, 0, 0, 0)
+        return scroll
     }
 
-    private fun showHome() {
-
-        content.removeAllViews()
-
-        val title = TextView(this)
-        title.text = "🐔 ЧІКІН СКЛАД"
-        title.textSize = 30f
-        title.gravity = Gravity.CENTER
-        title.setTypeface(null, Typeface.BOLD)
-        title.setPadding(0, 0, 0, dp(25))
-
-        content.addView(title)
-
-        val info = TextView(this)
-        info.text =
-            "Облік птиці • корму • яєць • доходів • витрат"
-        info.textSize = 16f
-        info.gravity = Gravity.CENTER
-        info.setPadding(0, 0, 0, dp(20))
-
-        content.addView(info)
-
-        addMainButton("📅 Щоденні операції") {
-            dailyOperations()
-        }
-
-        addMainButton("📒 Журнал операцій") {
-            journal()
-        }
-
-        addMainButton("🐔 Поголів'я") {
-            birds()
-        }
-
-        addMainButton("🌾 Корм") {
-            feed()
-        }
-
-        addMainButton("🥚 Яйця та продаж") {
-            eggs()
-        }
-
-        addMainButton("🐓 Півники / забій") {
-            roosters()
-        }
-
-        addMainButton("📊 Місячна таблиця") {
-            monthlyTable()
-        }
-
-        addMainButton("📈 Графіки") {
-            graphs()
-        }
-
-        addMainButton("💰 Підсумок та окупність") {
-            report()
-        }
-
-        addMainButton("🗑 Очистити всі дані") {
-            clearAllData()
-        }
-
-        val status = TextView(this)
-        status.text =
-            "\n💾 Дані зберігаються автоматично на телефоні."
-        status.textSize = 15f
-        status.gravity = Gravity.CENTER
-
-        content.addView(status)
+    private fun title(text: String): TextView {
+        val view = TextView(this)
+        view.text = text
+        view.textSize = 24f
+        view.gravity = Gravity.CENTER
+        view.setPadding(dp(8), dp(8), dp(8), dp(18))
+        return view
     }
 
-    private fun addMainButton(
-        text: String,
-        action: () -> Unit
-    ) {
+    private fun subtitle(text: String): TextView {
+        val view = TextView(this)
+        view.text = text
+        view.textSize = 16f
+        view.setPadding(dp(4), dp(8), dp(4), dp(8))
+        return view
+    }
 
-        val button = Button(this)
+    private fun button(text: String, action: () -> Unit): Button {
+        val b = Button(this)
+        b.text = text
+        b.textSize = 16f
+        b.isAllCaps = false
 
-        button.text = text
-        button.textSize = 18f
-
-        val params =
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(58)
-            )
-
-        params.setMargins(
-            0,
-            dp(5),
-            0,
-            dp(5)
+        val params = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
         )
+        params.setMargins(0, dp(5), 0, dp(5))
+        b.layoutParams = params
 
-        content.addView(button, params)
-
-        button.setOnClickListener {
+        b.setOnClickListener {
             action()
         }
+
+        return b
     }
 
-    private fun backButton() {
+    private fun editText(
+        hint: String,
+        number: Boolean = false
+    ): EditText {
+        val e = EditText(this)
+        e.hint = hint
+        e.textSize = 16f
+        e.setPadding(dp(12), dp(10), dp(12), dp(10))
 
-        val button = Button(this)
+        if (number) {
+            e.inputType =
+                InputType.TYPE_CLASS_NUMBER or
+                        InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
 
-        button.text = "⬅ Назад"
-        button.textSize = 17f
+        val params = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        params.setMargins(0, dp(4), 0, dp(4))
+        e.layoutParams = params
 
-        content.addView(
-            button,
-            0,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(55)
+        return e
+    }
+
+    private fun setContent(view: View) {
+        setContentView(view)
+    }
+
+    private fun formatMoney(value: Double): String {
+        return String.format(Locale.getDefault(), "%.2f грн", value)
+    }
+
+    private fun formatNumber(value: Double): String {
+        return String.format(Locale.getDefault(), "%.2f", value)
+    }
+
+    private fun today(): String {
+        return SimpleDateFormat(
+            "dd.MM.yyyy",
+            Locale.getDefault()
+        ).format(Date())
+    }
+
+    private fun currentMonth(): String {
+        return SimpleDateFormat(
+            "MM.yyyy",
+            Locale.getDefault()
+        ).format(Date())
+    }
+
+    private fun monthFromDate(date: String): String {
+        return try {
+            val parts = date.split(".")
+            if (parts.size == 3) {
+                "${parts[1]}.${parts[2]}"
+            } else {
+                currentMonth()
+            }
+        } catch (_: Exception) {
+            currentMonth()
+        }
+    }
+
+    // ------------------------------------------------------------
+    // ГОЛОВНЕ МЕНЮ
+    // ------------------------------------------------------------
+
+    private fun showMainMenu() {
+
+        val root = rootLayout()
+
+        root.addView(title("🐔 ЧІКІН СКЛАД"))
+
+        root.addView(
+            subtitle(
+                "Облік курей, корму, яєць, витрат,\n" +
+                        "доходів та окупності"
             )
         )
 
-        button.setOnClickListener {
-            showHome()
-        }
+        root.addView(
+            button("🐔 Поголів'я птиці") {
+                birdsScreen()
+            }
+        )
+
+        root.addView(
+            button("🌾 Корм") {
+                feedScreen()
+            }
+        )
+
+        root.addView(
+            button("🥚 Яйця та продаж") {
+                eggsScreen()
+            }
+        )
+
+        root.addView(
+            button("🐣 Інкубація") {
+                incubationScreen()
+            }
+        )
+
+        root.addView(
+            button("🐓 Півники / забій") {
+                roostersScreen()
+            }
+        )
+
+        root.addView(
+            button("📝 Щоденний журнал") {
+                journalScreen()
+            }
+        )
+
+        root.addView(
+            button("➕ Додати операцію") {
+                addOperation()
+            }
+        )
+
+        root.addView(
+            button("📅 Таблиця по місяцях") {
+                monthlyTableScreen()
+            }
+        )
+
+        root.addView(
+            button("📈 Графік по днях") {
+                dailyGraphScreen()
+            }
+        )
+
+        root.addView(
+            button("📊 Графік по місяцях") {
+                monthlyGraphScreen()
+            }
+        )
+
+        root.addView(
+            button("💰 Загальний звіт та окупність") {
+                reportScreen()
+            }
+        )
+
+        root.addView(
+            button("🗑 Очистити всі дані") {
+                confirmClear()
+            }
+        )
+
+        setContent(root)
     }
 
-    // =========================================================
-    // ЩОДЕННА ОПЕРАЦІЯ
-    // =========================================================
+    // ------------------------------------------------------------
+    // ПОГОЛІВ'Я
+    // ------------------------------------------------------------
 
-    private fun dailyOperations() {
+    private fun birdsScreen() {
 
-        content.removeAllViews()
-        backButton()
+        val scroll = scrollLayout()
+        val root = rootLayout()
 
-        val title = TextView(this)
-        title.text = "📅 ЩОДЕННА ОПЕРАЦІЯ"
-        title.textSize = 26f
-        title.setTypeface(null, Typeface.BOLD)
-        title.gravity = Gravity.CENTER
-        title.setPadding(0, dp(20), 0, dp(20))
+        root.addView(title("🐔 Поголів'я"))
 
-        content.addView(title)
+        val chickens = editText("Кількість курей", true)
+        val roosters = editText("Кількість півнів", true)
+        val young = editText("Молодняк", true)
+        val age = editText("Вік птиці, місяців", true)
 
-        addMainButton("➕ Додати операцію") {
-            addOperation()
-        }
+        chickens.setText(
+            prefs.getInt("chickens", 0)
+                .takeIf { it > 0 }?.toString() ?: ""
+        )
 
-        addMainButton("📒 Переглянути журнал") {
-            journal()
-        }
+        roosters.setText(
+            prefs.getInt("roosters", 0)
+                .takeIf { it > 0 }?.toString() ?: ""
+        )
 
-        addMainButton("📊 Місячна таблиця") {
-            monthlyTable()
-        }
+        young.setText(
+            prefs.getInt("young", 0)
+                .takeIf { it > 0 }?.toString() ?: ""
+        )
 
-        addMainButton("📈 Графіки") {
-            graphs()
-        }
+        age.setText(
+            prefs.getFloat("age", 0f)
+                .takeIf { it > 0f }?.toString() ?: ""
+        )
+
+        root.addView(chickens)
+        root.addView(roosters)
+        root.addView(young)
+        root.addView(age)
+
+        root.addView(
+            button("💾 Зберегти") {
+
+                val c = chickens.text.toString().toIntOrNull() ?: 0
+                val r = roosters.text.toString().toIntOrNull() ?: 0
+                val y = young.text.toString().toIntOrNull() ?: 0
+                val a = age.text.toString().toFloatOrNull() ?: 0f
+
+                prefs.edit()
+                    .putInt("chickens", c)
+                    .putInt("roosters", r)
+                    .putInt("young", y)
+                    .putFloat("age", a)
+                    .apply()
+
+                Toast.makeText(
+                    this,
+                    "Дані збережено",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        )
+
+        root.addView(
+            button("⬅ Назад") {
+                showMainMenu()
+            }
+        )
+
+        scroll.addView(root)
+        setContent(scroll)
     }
 
-    // =========================================================
+    // ------------------------------------------------------------
+    // КОРМ
+    // ------------------------------------------------------------
+
+    private fun feedScreen() {
+
+        val scroll = scrollLayout()
+        val root = rootLayout()
+
+        root.addView(title("🌾 Корм"))
+
+        val birds = editText("Кількість птиці", true)
+        val grams = editText("Корм на одну голову за день, грам", true)
+        val price = editText("Ціна корму за 1 кг, грн", true)
+        val monthly = editText("Місячна витрата корму, грн", true)
+
+        birds.setText(
+            prefs.getInt("feed_birds", 0)
+                .takeIf { it > 0 }?.toString() ?: ""
+        )
+
+        grams.setText(
+            prefs.getFloat("feed_grams", 0f)
+                .takeIf { it > 0f }?.toString() ?: ""
+        )
+
+        price.setText(
+            prefs.getFloat("feed_price", 0f)
+                .takeIf { it > 0f }?.toString() ?: ""
+        )
+
+        monthly.setText(
+            prefs.getFloat("feed_month_cost", 0f)
+                .takeIf { it > 0f }?.toString() ?: ""
+        )
+
+        root.addView(birds)
+        root.addView(grams)
+        root.addView(price)
+        root.addView(monthly)
+
+        root.addView(
+            button("🧮 Розрахувати місячну вартість") {
+
+                val b = birds.text.toString().toDoubleOrNull() ?: 0.0
+                val g = grams.text.toString().toDoubleOrNull() ?: 0.0
+                val p = price.text.toString().toDoubleOrNull() ?: 0.0
+
+                val kgPerDay = b * g / 1000.0
+                val kgPerMonth = kgPerDay * 30.0
+                val cost = kgPerMonth * p
+
+                monthly.setText(formatNumber(cost))
+
+                Toast.makeText(
+                    this,
+                    "На місяць: ${formatMoney(cost)}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        )
+
+        root.addView(
+            button("💾 Зберегти") {
+
+                val b = birds.text.toString().toIntOrNull() ?: 0
+                val g = grams.text.toString().toFloatOrNull() ?: 0f
+                val p = price.text.toString().toFloatOrNull() ?: 0f
+                val m = monthly.text.toString().toFloatOrNull() ?: 0f
+
+                prefs.edit()
+                    .putInt("feed_birds", b)
+                    .putFloat("feed_grams", g)
+                    .putFloat("feed_price", p)
+                    .putFloat("feed_month_cost", m)
+                    .apply()
+
+                Toast.makeText(
+                    this,
+                    "Корм збережено",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        )
+
+        root.addView(
+            button("➕ Записати купівлю корму сьогодні") {
+                addOperation("Купівля корму")
+            }
+        )
+
+        root.addView(
+            button("⬅ Назад") {
+                showMainMenu()
+            }
+        )
+
+        scroll.addView(root)
+        setContent(scroll)
+    }
+
+    // ------------------------------------------------------------
+    // ЯЙЦЯ
+    // ------------------------------------------------------------
+
+    private fun eggsScreen() {
+
+        val scroll = scrollLayout()
+        val root = rootLayout()
+
+        root.addView(title("🥚 Яйця та продаж"))
+
+        val eggs = editText("Кількість яєць", true)
+        val price = editText("Ціна одного яйця, грн", true)
+        val revenue = editText("Дохід від яєць за місяць, грн", true)
+
+        eggs.setText(
+            prefs.getInt("eggs", 0)
+                .takeIf { it > 0 }?.toString() ?: ""
+        )
+
+        price.setText(
+            prefs.getFloat("egg_price", 0f)
+                .takeIf { it > 0f }?.toString() ?: ""
+        )
+
+        revenue.setText(
+            prefs.getFloat("egg_revenue", 0f)
+                .takeIf { it > 0f }?.toString() ?: ""
+        )
+
+        root.addView(eggs)
+        root.addView(price)
+        root.addView(revenue)
+
+        root.addView(
+            button("🧮 Розрахувати") {
+
+                val e = eggs.text.toString().toDoubleOrNull() ?: 0.0
+                val p = price.text.toString().toDoubleOrNull() ?: 0.0
+
+                val result = e * p
+
+                revenue.setText(formatNumber(result))
+
+                Toast.makeText(
+                    this,
+                    "Дохід: ${formatMoney(result)}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        )
+
+        root.addView(
+            button("💾 Зберегти") {
+
+                val e = eggs.text.toString().toIntOrNull() ?: 0
+                val p = price.text.toString().toFloatOrNull() ?: 0f
+                val r = revenue.text.toString().toFloatOrNull() ?: 0f
+
+                prefs.edit()
+                    .putInt("eggs", e)
+                    .putFloat("egg_price", p)
+                    .putFloat("egg_revenue", r)
+                    .apply()
+
+                Toast.makeText(
+                    this,
+                    "Дані яєць збережено",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        )
+
+        root.addView(
+            button("🥚 Записати продаж яєць сьогодні") {
+                addOperation("Продаж яєць")
+            }
+        )
+
+        root.addView(
+            button("⬅ Назад") {
+                showMainMenu()
+            }
+        )
+
+        scroll.addView(root)
+        setContent(scroll)
+    }
+
+    // ------------------------------------------------------------
+    // ІНКУБАЦІЯ
+    // ------------------------------------------------------------
+
+    private fun incubationScreen() {
+
+        val scroll = scrollLayout()
+        val root = rootLayout()
+
+        root.addView(title("🐣 Інкубація"))
+
+        root.addView(
+            subtitle(
+                "Тут можна записувати витрати та доходи,\n" +
+                        "пов'язані з інкубацією."
+            )
+        )
+
+        root.addView(
+            button("➕ Додати витрату на інкубацію") {
+                addOperation("Інкубація")
+            }
+        )
+
+        root.addView(
+            button("📋 Переглянути журнал") {
+                journalScreen()
+            }
+        )
+
+        root.addView(
+            button("⬅ Назад") {
+                showMainMenu()
+            }
+        )
+
+        scroll.addView(root)
+        setContent(scroll)
+    }
+
+    // ------------------------------------------------------------
+    // ПІВНИКИ
+    // ------------------------------------------------------------
+
+    private fun roostersScreen() {
+
+        val scroll = scrollLayout()
+        val root = rootLayout()
+
+        root.addView(title("🐓 Півники / забій"))
+
+        val young = prefs.getInt("young", 0)
+        val age = prefs.getFloat("age", 0f)
+
+        root.addView(
+            subtitle(
+                "Молодняк: $young гол.\n" +
+                        "Вік: ${formatNumber(age.toDouble())} міс."
+            )
+        )
+
+        root.addView(
+            button("➕ Записати продаж птиці") {
+                addOperation("Продаж птиці")
+            }
+        )
+
+        root.addView(
+            button("📋 Журнал продажу") {
+                journalScreen()
+            }
+        )
+
+        root.addView(
+            button("⬅ Назад") {
+                showMainMenu()
+            }
+        )
+
+        scroll.addView(root)
+        setContent(scroll)
+    }
+
+    // ------------------------------------------------------------
     // ДОДАВАННЯ ОПЕРАЦІЇ
-    // =========================================================
+    // ------------------------------------------------------------
 
-    private fun addOperation() {
+    private fun addOperation(preselectedType: String? = null) {
 
-        val box = LinearLayout(this)
-        box.orientation = LinearLayout.VERTICAL
-        box.setPadding(
-            dp(25),
-            dp(10),
-            dp(25),
-            dp(10)
+        val root = LinearLayout(this)
+        root.orientation = LinearLayout.VERTICAL
+        root.setPadding(dp(20), dp(20), dp(20), dp(10))
+
+        val date = editText("Дата (дд.мм.рррр)")
+        date.setText(today())
+
+        val typeSpinner = Spinner(this)
+
+        val adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            operationTypes
         )
 
-        val date = EditText(this)
-        date.hint = "Дата"
-        date.setText(dateFormat.format(Date()))
-        date.isFocusable = false
+        adapter.setDropDownViewResource(
+            android.R.layout.simple_spinner_dropdown_item
+        )
 
-        date.setOnClickListener {
-            chooseDate(date)
+        typeSpinner.adapter = adapter
+
+        if (preselectedType != null) {
+            val index = operationTypes.indexOf(preselectedType)
+            if (index >= 0) {
+                typeSpinner.setSelection(index)
+            }
         }
 
-        val type = Spinner(this)
+        val description = editText("Що саме? Наприклад: корм, яйця, кури")
+        val quantity = editText("Кількість (кг / шт.)", true)
+        val amount = editText("Сума, грн", true)
 
-        val types = arrayOf(
-            "Купівля корму",
-            "Продаж яєць",
-            "Продаж птиці",
-            "Інші витрати",
-            "Інший дохід",
-            "Інкубація"
-        )
-
-        type.adapter = ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_dropdown_item,
-            types
-        )
-
-        val description = EditText(this)
-        description.hint = "Опис операції"
-
-        val quantity = EditText(this)
-        quantity.hint = "Кількість"
-        quantity.inputType =
-            InputType.TYPE_CLASS_NUMBER or
-                    InputType.TYPE_NUMBER_FLAG_DECIMAL
-
-        val amount = EditText(this)
-        amount.hint = "Сума, грн"
-        amount.inputType =
-            InputType.TYPE_CLASS_NUMBER or
-                    InputType.TYPE_NUMBER_FLAG_DECIMAL
-
-        box.addView(date)
-        box.addView(type)
-        box.addView(description)
-        box.addView(quantity)
-        box.addView(amount)
+        root.addView(date)
+        root.addView(typeSpinner)
+        root.addView(description)
+        root.addView(quantity)
+        root.addView(amount)
 
         AlertDialog.Builder(this)
             .setTitle("➕ Нова операція")
-            .setView(box)
-            .setNegativeButton("Скасувати", null)
+            .setView(root)
             .setPositiveButton("Зберегти") { _, _ ->
 
-                val operation = JSONObject()
+                val d = date.text.toString().trim()
+                val t = typeSpinner.selectedItem.toString()
+                val desc = description.text.toString().trim()
+                val q = quantity.text.toString().replace(",", ".")
+                    .toDoubleOrNull() ?: 0.0
+                val a = amount.text.toString().replace(",", ".")
+                    .toDoubleOrNull() ?: 0.0
 
-                operation.put(
-                    "date",
-                    date.text.toString()
+                if (d.isEmpty()) {
+                    Toast.makeText(
+                        this,
+                        "Вкажи дату",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@setPositiveButton
+                }
+
+                saveOperation(
+                    Operation(
+                        id = System.currentTimeMillis(),
+                        date = d,
+                        type = t,
+                        description = desc,
+                        quantity = q,
+                        amount = a
+                    )
                 )
-
-                operation.put(
-                    "type",
-                    type.selectedItem.toString()
-                )
-
-                operation.put(
-                    "description",
-                    description.text.toString()
-                )
-
-                operation.put(
-                    "quantity",
-                    quantity.text.toString()
-                        .toDoubleOrNull() ?: 0.0
-                )
-
-                operation.put(
-                    "amount",
-                    amount.text.toString()
-                        .toDoubleOrNull() ?: 0.0
-                )
-
-                addOperationToStorage(operation)
 
                 Toast.makeText(
                     this,
-                    "✅ Операцію збережено",
+                    "Операцію збережено",
                     Toast.LENGTH_SHORT
                 ).show()
             }
+            .setNegativeButton("Скасувати", null)
             .show()
     }
 
-    private fun chooseDate(edit: EditText) {
+    // ------------------------------------------------------------
+    // ЗБЕРЕЖЕННЯ ОПЕРАЦІЙ
+    // ------------------------------------------------------------
 
-        val calendar = Calendar.getInstance()
+    private fun getOperations(): MutableList<Operation> {
 
-        android.app.DatePickerDialog(
-            this,
-            { _, year, month, day ->
+        val result = mutableListOf<Operation>()
 
-                val c = Calendar.getInstance()
+        val text = prefs.getString("operations", "[]") ?: "[]"
 
-                c.set(
-                    year,
-                    month,
-                    day
+        try {
+
+            val array = JSONArray(text)
+
+            for (i in 0 until array.length()) {
+
+                val obj = array.getJSONObject(i)
+
+                result.add(
+                    Operation(
+                        id = obj.optLong("id"),
+                        date = obj.optString("date"),
+                        type = obj.optString("type"),
+                        description = obj.optString("description"),
+                        quantity = obj.optDouble("quantity", 0.0),
+                        amount = obj.optDouble("amount", 0.0)
+                    )
                 )
+            }
 
-                edit.setText(
-                    dateFormat.format(c.time)
-                )
+        } catch (_: Exception) {
+        }
 
-            },
-            calendar.get(Calendar.YEAR),
-            calendar.get(Calendar.MONTH),
-            calendar.get(Calendar.DAY_OF_MONTH)
-        ).show()
+        return result
     }
 
-    private fun addOperationToStorage(
-        operation: JSONObject
-    ) {
+    private fun saveOperation(operation: Operation) {
 
-        val array = getOperations()
+        val list = getOperations()
 
-        array.put(operation)
+        list.add(operation)
+
+        val array = JSONArray()
+
+        for (item in list) {
+
+            val obj = JSONObject()
+
+            obj.put("id", item.id)
+            obj.put("date", item.date)
+            obj.put("type", item.type)
+            obj.put("description", item.description)
+            obj.put("quantity", item.quantity)
+            obj.put("amount", item.amount)
+
+            array.put(obj)
+        }
 
         prefs.edit()
-            .putString(
-                "operations",
-                array.toString()
-            )
+            .putString("operations", array.toString())
             .apply()
     }
 
-    private fun getOperations(): JSONArray {
+    private fun deleteOperation(id: Long) {
 
-        val text =
-            prefs.getString(
-                "operations",
-                "[]"
-            ) ?: "[]"
+        val list = getOperations()
 
-        return try {
-            JSONArray(text)
-        } catch (e: Exception) {
-            JSONArray()
+        list.removeAll {
+            it.id == id
         }
+
+        val array = JSONArray()
+
+        for (item in list) {
+
+            val obj = JSONObject()
+
+            obj.put("id", item.id)
+            obj.put("date", item.date)
+            obj.put("type", item.type)
+            obj.put("description", item.description)
+            obj.put("quantity", item.quantity)
+            obj.put("amount", item.amount)
+
+            array.put(obj)
+        }
+
+        prefs.edit()
+            .putString("operations", array.toString())
+            .apply()
     }
 
-    // =========================================================
+    // ------------------------------------------------------------
     // ЖУРНАЛ
-    // =========================================================
+    // ------------------------------------------------------------
 
-    private fun journal() {
+    private fun journalScreen() {
 
-        content.removeAllViews()
-        backButton()
+        val scroll = scrollLayout()
+        val root = rootLayout()
 
-        val title = TextView(this)
-        title.text = "📒 ЖУРНАЛ ОПЕРАЦІЙ"
-        title.textSize = 26f
-        title.setTypeface(null, Typeface.BOLD)
-        title.gravity = Gravity.CENTER
-
-        title.setPadding(
-            0,
-            dp(20),
-            0,
-            dp(20)
-        )
-
-        content.addView(title)
-
-        addMainButton("➕ Додати операцію") {
-            addOperation()
-        }
+        root.addView(title("📝 Щоденний журнал"))
 
         val operations = getOperations()
 
-        if (operations.length == 0) {
+        if (operations.isEmpty()) {
 
-            val empty = TextView(this)
-
-            empty.text =
-                "\nОперацій ще немає.\n\n" +
-                        "Натисни «Додати операцію»."
-
-            empty.textSize = 18f
-            empty.gravity = Gravity.CENTER
-
-            content.addView(empty)
-
-            return
-        }
-
-        for (i in operations.length - 1 downTo 0) {
-
-            val obj = operations.getJSONObject(i)
-
-            val card = LinearLayout(this)
-
-            card.orientation =
-                LinearLayout.VERTICAL
-
-            card.setPadding(
-                dp(15),
-                dp(15),
-                dp(15),
-                dp(15)
+            root.addView(
+                subtitle("Поки що немає жодної операції.")
             )
 
-            val date =
-                obj.optString("date")
+        } else {
 
-            val type =
-                obj.optString("type")
+            val sorted = operations.sortedByDescending {
+                parseDateForSort(it.date)
+            }
 
-            val description =
-                obj.optString("description")
+            var totalIncome = 0.0
+            var totalExpense = 0.0
 
-            val quantity =
-                obj.optDouble(
-                    "quantity",
-                    0.0
+            for (op in operations) {
+
+                if (isIncome(op.type)) {
+                    totalIncome += op.amount
+                } else {
+                    totalExpense += op.amount
+                }
+            }
+
+            root.addView(
+                subtitle(
+                    "Доходи: ${formatMoney(totalIncome)}\n" +
+                            "Витрати: ${formatMoney(totalExpense)}\n" +
+                            "Результат: ${formatMoney(totalIncome - totalExpense)}"
+                )
+            )
+
+            for (op in sorted) {
+
+                val card = LinearLayout(this)
+                card.orientation = LinearLayout.VERTICAL
+                card.setPadding(
+                    dp(10),
+                    dp(10),
+                    dp(10),
+                    dp(10)
                 )
 
-            val amount =
-                obj.optDouble(
-                    "amount",
-                    0.0
-                )
+                val info = TextView(this)
+                info.textSize = 15f
 
-            val text = TextView(this)
+                val sign = if (isIncome(op.type)) "+" else "-"
 
-            text.text =
-                "$date\n" +
-                        "$type\n" +
-                        if (description.isNotBlank())
-                            "$description\n"
-                        else
-                            "" +
-                        "Кількість: ${format(quantity)}\n" +
-                        "Сума: ${format(amount)} грн"
+                info.text = buildString {
+                    append("${op.date}\n")
+                    append("${op.type}\n")
 
-            text.textSize = 17f
-
-            card.addView(text)
-
-            val delete = Button(this)
-
-            delete.text = "🗑 Видалити"
-
-            card.addView(delete)
-
-            delete.setOnClickListener {
-
-                AlertDialog.Builder(this)
-                    .setTitle("Видалити операцію?")
-                    .setMessage(
-                        "$date\n$type\n${format(amount)} грн"
-                    )
-                    .setNegativeButton(
-                        "Скасувати",
-                        null
-                    )
-                    .setPositiveButton(
-                        "Видалити"
-                    ) { _, _ ->
-
-                        operations.remove(i)
-
-                        prefs.edit()
-                            .putString(
-                                "operations",
-                                operations.toString()
-                            )
-                            .apply()
-
-                        journal()
+                    if (op.description.isNotEmpty()) {
+                        append("${op.description}\n")
                     }
-                    .show()
+
+                    if (op.quantity != 0.0) {
+                        append("Кількість: ${formatNumber(op.quantity)}\n")
+                    }
+
+                    append("$sign ${formatMoney(op.amount)}")
+                }
+
+                card.addView(info)
+
+                val delete = Button(this)
+                delete.text = "🗑 Видалити"
+                delete.isAllCaps = false
+
+                delete.setOnClickListener {
+
+                    AlertDialog.Builder(this)
+                        .setTitle("Видалити запис?")
+                        .setMessage(
+                            "${op.date}\n${op.type}\n${formatMoney(op.amount)}"
+                        )
+                        .setPositiveButton("Так") { _, _ ->
+                            deleteOperation(op.id)
+                            journalScreen()
+                        }
+                        .setNegativeButton("Ні", null)
+                        .show()
+                }
+
+                card.addView(delete)
+
+                root.addView(card)
+
+                val line = View(this)
+                line.minimumHeight = dp(1)
+                root.addView(line)
             }
-
-            content.addView(card)
-
-            val line = TextView(this)
-            line.text = "────────────────────"
-            line.gravity = Gravity.CENTER
-
-            content.addView(line)
         }
-    }
 
-    // =========================================================
-    // ПОГОЛІВ'Я
-    // =========================================================
-
-    private fun birds() {
-
-        content.removeAllViews()
-        backButton()
-
-        val chickens = createInput(
-            "Кількість курей",
-            getStringValue("chickens")
+        root.addView(
+            button("➕ Додати операцію") {
+                addOperation()
+            }
         )
 
-        val roosters = createInput(
-            "Кількість півнів",
-            getStringValue("roosters")
+        root.addView(
+            button("⬅ Назад") {
+                showMainMenu()
+            }
         )
 
-        val box = LinearLayout(this)
-        box.orientation = LinearLayout.VERTICAL
-
-        box.addView(chickens)
-        box.addView(roosters)
-
-        AlertDialog.Builder(this)
-            .setTitle("🐔 Поголів'я")
-            .setView(box)
-            .setNegativeButton(
-                "Скасувати",
-                null
-            )
-            .setPositiveButton(
-                "Зберегти"
-            ) { _, _ ->
-
-                val c =
-                    chickens.text.toString()
-                        .toIntOrNull() ?: 0
-
-                val r =
-                    roosters.text.toString()
-                        .toIntOrNull() ?: 0
-
-                save(
-                    "chickens",
-                    c.toString()
-                )
-
-                save(
-                    "roosters",
-                    r.toString()
-                )
-
-                birds()
-            }
-            .show()
+        scroll.addView(root)
+        setContent(scroll)
     }
 
-    // =========================================================
-    // КОРМ
-    // =========================================================
+    // ------------------------------------------------------------
+    // ВИЗНАЧЕННЯ ДОХОДУ
+    // ------------------------------------------------------------
 
-    private fun feed() {
+    private fun isIncome(type: String): Boolean {
 
-        content.removeAllViews()
-        backButton()
+        return type == "Продаж яєць" ||
+                type == "Продаж птиці" ||
+                type == "Інший дохід"
+    }
 
-        val title = TextView(this)
+    private fun parseDateForSort(date: String): Long {
 
-        title.text = "🌾 КОРМ"
-        title.textSize = 26f
-        title.setTypeface(null, Typeface.BOLD)
-        title.gravity = Gravity.CENTER
+        return try {
 
-        content.addView(title)
-
-        val birds =
-            getDoubleValue("feed_birds")
-
-        val grams =
-            getDoubleValue("feed_grams")
-
-        val price =
-            getDoubleValue("feed_price")
-
-        val kgDay =
-            birds * grams / 1000.0
-
-        val kgMonth =
-            kgDay * 30
-
-        val cost =
-            kgMonth * price
-
-        val info = TextView(this)
-
-        info.text =
-            "\nПоголів'я: ${format(birds)}\n" +
-                    "Норма: ${format(grams)} г/голову/день\n\n" +
-                    "Корм на день: ${format(kgDay)} кг\n" +
-                    "Корм на місяць: ${format(kgMonth)} кг\n" +
-                    "Вартість: ${format(cost)} грн/місяць"
-
-        info.textSize = 18f
-
-        content.addView(info)
-
-        addMainButton("✏️ Змінити розрахунок") {
-
-            val b = createInput(
-                "Кількість курей",
-                getStringValue("feed_birds")
+            val sdf = SimpleDateFormat(
+                "dd.MM.yyyy",
+                Locale.getDefault()
             )
 
-            val g = createInput(
-                "Грамів на голову / день",
-                getStringValue("feed_grams")
-            )
+            sdf.parse(date)?.time ?: 0L
 
-            val p = createInput(
-                "Ціна корму за кг",
-                getStringValue("feed_price")
-            )
-
-            val box =
-                LinearLayout(this)
-
-            box.orientation =
-                LinearLayout.VERTICAL
-
-            box.addView(b)
-            box.addView(g)
-            box.addView(p)
-
-            AlertDialog.Builder(this)
-                .setTitle("🌾 Корм")
-                .setView(box)
-                .setNegativeButton(
-                    "Скасувати",
-                    null
-                )
-                .setPositiveButton(
-                    "Зберегти"
-                ) { _, _ ->
-
-                    save(
-                        "feed_birds",
-                        b.text.toString()
-                    )
-
-                    save(
-                        "feed_grams",
-                        g.text.toString()
-                    )
-
-                    save(
-                        "feed_price",
-                        p.text.toString()
-                    )
-
-                    feed()
-                }
-                .show()
+        } catch (_: Exception) {
+            0L
         }
     }
 
-    // =========================================================
-    // ЯЙЦЯ
-    // =========================================================
-
-    private fun eggs() {
-
-        content.removeAllViews()
-        backButton()
-
-        val eggs =
-            getDoubleValue("eggs")
-
-        val price =
-            getDoubleValue("egg_price")
-
-        val revenue =
-            eggs / 10.0 * price
-
-        val title = TextView(this)
-
-        title.text = "🥚 ЯЙЦЯ ТА ПРОДАЖ"
-        title.textSize = 26f
-        title.setTypeface(null, Typeface.BOLD)
-        title.gravity = Gravity.CENTER
-
-        content.addView(title)
-
-        val info = TextView(this)
-
-        info.text =
-            "\nЯєць за місяць: ${format(eggs)} шт.\n" +
-                    "Ціна за 10 шт.: ${format(price)} грн\n\n" +
-                    "Виручка: ${format(revenue)} грн"
-
-        info.textSize = 18f
-
-        content.addView(info)
-
-        addMainButton("✏️ Змінити") {
-
-            val e =
-                createInput(
-                    "Кількість яєць",
-                    getStringValue("eggs")
-                )
-
-            val p =
-                createInput(
-                    "Ціна за 10 яєць",
-                    getStringValue("egg_price")
-                )
-
-            val box =
-                LinearLayout(this)
-
-            box.orientation =
-                LinearLayout.VERTICAL
-
-            box.addView(e)
-            box.addView(p)
-
-            AlertDialog.Builder(this)
-                .setTitle("🥚 Яйця")
-                .setView(box)
-                .setNegativeButton(
-                    "Скасувати",
-                    null
-                )
-                .setPositiveButton(
-                    "Зберегти"
-                ) { _, _ ->
-
-                    save(
-                        "eggs",
-                        e.text.toString()
-                    )
-
-                    save(
-                        "egg_price",
-                        p.text.toString()
-                    )
-
-                    eggs()
-                }
-                .show()
-        }
-    }
-
-    // =========================================================
-    // ПІВНИКИ
-    // =========================================================
-
-    private fun roosters() {
-
-        content.removeAllViews()
-        backButton()
-
-        val count =
-            getStringValue(
-                "young_roosters",
-                "0"
-            )
-
-        val age =
-            getStringValue(
-                "rooster_age",
-                "0"
-            )
-
-        val title = TextView(this)
-
-        title.text = "🐓 ПІВНИКИ / ЗАБІЙ"
-        title.textSize = 26f
-        title.setTypeface(null, Typeface.BOLD)
-        title.gravity = Gravity.CENTER
-
-        content.addView(title)
-
-        val info = TextView(this)
-
-        info.text =
-            "\nКількість: $count\n" +
-                    "Вік: $age місяців\n\n" +
-                    "Вік забою залежить від породи,\n" +
-                    "живої маси та призначення птиці."
-
-        info.textSize = 18f
-
-        content.addView(info)
-
-        addMainButton("✏️ Змінити") {
-
-            val c =
-                createInput(
-                    "Кількість півників",
-                    count
-                )
-
-            val a =
-                createInput(
-                    "Вік, місяців",
-                    age
-                )
-
-            val box =
-                LinearLayout(this)
-
-            box.orientation =
-                LinearLayout.VERTICAL
-
-            box.addView(c)
-            box.addView(a)
-
-            AlertDialog.Builder(this)
-                .setTitle("🐓 Півники")
-                .setView(box)
-                .setNegativeButton(
-                    "Скасувати",
-                    null
-                )
-                .setPositiveButton(
-                    "Зберегти"
-                ) { _, _ ->
-
-                    save(
-                        "young_roosters",
-                        c.text.toString()
-                    )
-
-                    save(
-                        "rooster_age",
-                        a.text.toString()
-                    )
-
-                    roosters()
-                }
-                .show()
-        }
-    }
-
-    // =========================================================
+    // ------------------------------------------------------------
     // МІСЯЧНА ТАБЛИЦЯ
-    // =========================================================
+    // ------------------------------------------------------------
 
-    private fun monthlyTable() {
+    private fun monthlyTableScreen() {
 
-        content.removeAllViews()
-        backButton()
+        val scroll = scrollLayout()
+        val root = rootLayout()
 
-        val title = TextView(this)
+        root.addView(title("📅 Таблиця по місяцях"))
 
-        title.text = "📊 МІСЯЧНА ТАБЛИЦЯ"
-        title.textSize = 26f
-        title.setTypeface(null, Typeface.BOLD)
-        title.gravity = Gravity.CENTER
+        val operations = getOperations()
 
-        title.setPadding(
-            0,
-            dp(20),
-            0,
-            dp(20)
+        val months = operations
+            .map { monthFromDate(it.date) }
+            .distinct()
+            .sortedWith(
+                compareBy {
+                    parseMonthForSort(it)
+                }
+            )
+            .toMutableList()
+
+        if (months.isEmpty()) {
+            months.add(currentMonth())
+        }
+
+        val table = TableLayout(this)
+        table.isStretchAllColumns = true
+
+        val header = TableRow(this)
+
+        val headers = arrayOf(
+            "Місяць",
+            "Доходи",
+            "Витрати",
+            "Результат",
+            "Накоп."
         )
 
-        content.addView(title)
+        for (h in headers) {
+            val tv = TextView(this)
+            tv.text = h
+            tv.textSize = 13f
+            tv.gravity = Gravity.CENTER
+            tv.setPadding(dp(3), dp(8), dp(3), dp(8))
+            header.addView(tv)
+        }
 
-        val horizontal =
-            HorizontalScrollView(this)
+        table.addView(header)
 
-        val table =
-            TableLayout(this)
-
-        table.setPadding(
-            dp(5),
-            dp(5),
-            dp(5),
-            dp(20)
-        )
-
-        addTableRow(
-            table,
-            arrayOf(
-                "Місяць",
-                "Дохід",
-                "Витрати",
-                "Прибуток",
-                "Накопич."
-            ),
-            true
-        )
-
-        val months =
-            getMonths()
-
-        var accumulated = 0.0
+        var cumulative = 0.0
 
         for (month in months) {
 
-            val data =
-                calculateMonth(month)
-
-            val income =
-                data["income"] ?: 0.0
-
-            val expenses =
-                data["expenses"] ?: 0.0
-
-            val profit =
-                income - expenses
-
-            accumulated += profit
-
-            addTableRow(
-                table,
-                arrayOf(
-                    month,
-                    format(income),
-                    format(expenses),
-                    format(profit),
-                    format(accumulated)
-                ),
-                false
-            )
-        }
-
-        horizontal.addView(table)
-
-        content.addView(horizontal)
-
-        val note = TextView(this)
-
-        note.text =
-            "\n💡 Таблиця формується автоматично " +
-                    "з усіх щоденних операцій."
-
-        note.textSize = 16f
-
-        content.addView(note)
-    }
-
-    private fun addTableRow(
-        table: TableLayout,
-        values: Array<String>,
-        header: Boolean
-    ) {
-
-        val row =
-            TableRow(this)
-
-        for (value in values) {
-
-            val cell =
-                TextView(this)
-
-            cell.text = value
-            cell.textSize =
-                if (header) 16f else 15f
-
-            cell.setPadding(
-                dp(12),
-                dp(12),
-                dp(12),
-                dp(12)
-            )
-
-            if (header) {
-                cell.setTypeface(
-                    null,
-                    Typeface.BOLD
-                )
+            val monthOperations = operations.filter {
+                monthFromDate(it.date) == month
             }
 
-            row.addView(cell)
-        }
+            var income = 0.0
+            var expense = 0.0
 
-        table.addView(row)
-    }
+            for (op in monthOperations) {
 
-    private fun getMonths(): List<String> {
-
-        val set =
-            mutableSetOf<String>()
-
-        val operations =
-            getOperations()
-
-        for (i in 0 until operations.length) {
-
-            val date =
-                operations
-                    .getJSONObject(i)
-                    .optString("date")
-
-            try {
-
-                val d =
-                    dateFormat.parse(date)
-
-                if (d != null) {
-                    set.add(
-                        monthFormat.format(d)
-                    )
+                if (isIncome(op.type)) {
+                    income += op.amount
+                } else {
+                    expense += op.amount
                 }
-
-            } catch (_: Exception) {
             }
+
+            val profit = income - expense
+
+            cumulative += profit
+
+            val row = TableRow(this)
+
+            val values = arrayOf(
+                month,
+                formatMoney(income),
+                formatMoney(expense),
+                formatMoney(profit),
+                formatMoney(cumulative)
+            )
+
+            for (value in values) {
+
+                val tv = TextView(this)
+                tv.text = value
+                tv.textSize = 12f
+                tv.gravity = Gravity.CENTER
+                tv.setPadding(dp(3), dp(8), dp(3), dp(8))
+
+                row.addView(tv)
+            }
+
+            table.addView(row)
         }
 
-        val current =
-            monthFormat.format(Date())
+        root.addView(table)
 
-        set.add(current)
+        root.addView(
+            button("➕ Додати операцію") {
+                addOperation()
+            }
+        )
 
-        return set.sorted()
+        root.addView(
+            button("⬅ Назад") {
+                showMainMenu()
+            }
+        )
+
+        scroll.addView(root)
+        setContent(scroll)
     }
 
-    private fun calculateMonth(
-        month: String
-    ): MutableMap<String, Double> {
+    private fun parseMonthForSort(month: String): Long {
+
+        return try {
+
+            val sdf = SimpleDateFormat(
+                "MM.yyyy",
+                Locale.getDefault()
+            )
+
+            sdf.parse(month)?.time ?: 0L
+
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
+    // ------------------------------------------------------------
+    // ЗВІТ
+    // ------------------------------------------------------------
+
+    private fun reportScreen() {
+
+        val scroll = scrollLayout()
+        val root = rootLayout()
+
+        root.addView(title("💰 Загальний звіт"))
+
+        val operations = getOperations()
 
         var income = 0.0
-        var expenses = 0.0
+        var expense = 0.0
 
-        val operations =
-            getOperations()
+        var eggIncome = 0.0
+        var birdIncome = 0.0
+        var feedExpense = 0.0
+        var otherExpense = 0.0
 
-        for (i in 0 until operations.length) {
+        for (op in operations) {
 
-            val obj =
-                operations.getJSONObject(i)
+            if (isIncome(op.type)) {
 
-            val date =
-                obj.optString("date")
+                income += op.amount
 
-            val type =
-                obj.optString("type")
-
-            val amount =
-                obj.optDouble(
-                    "amount",
-                    0.0
-                )
-
-            val operationMonth =
-                try {
-                    val d =
-                        dateFormat.parse(date)
-
-                    if (d != null)
-                        monthFormat.format(d)
-                    else
-                        ""
-                } catch (_: Exception) {
-                    ""
+                if (op.type == "Продаж яєць") {
+                    eggIncome += op.amount
                 }
 
-            if (operationMonth != month)
-                continue
-
-            when (type) {
-
-                "Продаж яєць",
-                "Продаж птиці",
-                "Інший дохід" -> {
-                    income += amount
+                if (op.type == "Продаж птиці") {
+                    birdIncome += op.amount
                 }
 
-                "Купівля корму",
-                "Інші витрати",
-                "Інкубація" -> {
-                    expenses += amount
+            } else {
+
+                expense += op.amount
+
+                if (op.type == "Купівля корму") {
+                    feedExpense += op.amount
+                } else {
+                    otherExpense += op.amount
                 }
             }
         }
 
-        return mutableMapOf(
-            "income" to income,
-            "expenses" to expenses
-        )
-    }
+        val profit = income - expense
 
-    // =========================================================
-    // ГРАФІКИ
-    // =========================================================
+        val investment =
+            prefs.getFloat("investment", 0f).toDouble()
 
-    private fun graphs() {
+        val paybackText = if (profit > 0.0 && investment > 0.0) {
 
-        content.removeAllViews()
-        backButton()
+            val months = investment / profit
 
-        val title = TextView(this)
+            "${String.format(Locale.getDefault(), "%.1f", months)} міс."
 
-        title.text = "📈 ГРАФІКИ"
-        title.textSize = 26f
-        title.setTypeface(null, Typeface.BOLD)
-        title.gravity = Gravity.CENTER
-
-        content.addView(title)
-
-        val dailyTitle =
-            TextView(this)
-
-        dailyTitle.text =
-            "\n📅 Прибуток по днях"
-
-        dailyTitle.textSize = 20f
-        dailyTitle.setTypeface(
-            null,
-            Typeface.BOLD
-        )
-
-        content.addView(dailyTitle)
-
-        val dailyData =
-            getDailyGraphData()
-
-        val dailyGraph =
-            GraphView(
-                this,
-                dailyData
-            )
-
-        content.addView(
-            dailyGraph,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(300)
-            )
-        )
-
-        val monthlyTitle =
-            TextView(this)
-
-        monthlyTitle.text =
-            "\n📊 Прибуток по місяцях"
-
-        monthlyTitle.textSize = 20f
-        monthlyTitle.setTypeface(
-            null,
-            Typeface.BOLD
-        )
-
-        content.addView(monthlyTitle)
-
-        val monthlyData =
-            mutableListOf<Pair<String, Double>>()
-
-        for (month in getMonths()) {
-
-            val data =
-                calculateMonth(month)
-
-            val profit =
-                (data["income"] ?: 0.0) -
-                        (data["expenses"] ?: 0.0)
-
-            monthlyData.add(
-                Pair(month, profit)
-            )
+        } else {
+            "Недостатньо даних"
         }
 
-        val monthlyGraph =
-            GraphView(
-                this,
-                monthlyData
-            )
-
-        content.addView(
-            monthlyGraph,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(300)
+        root.addView(
+            subtitle(
+                "📈 ПО ЖУРНАЛУ\n\n" +
+                        "Всі доходи: ${formatMoney(income)}\n" +
+                        "Всі витрати: ${formatMoney(expense)}\n" +
+                        "Чистий результат: ${formatMoney(profit)}\n\n" +
+                        "🥚 Продаж яєць: ${formatMoney(eggIncome)}\n" +
+                        "🐓 Продаж птиці: ${formatMoney(birdIncome)}\n" +
+                        "🌾 Корм: ${formatMoney(feedExpense)}\n" +
+                        "💸 Інші витрати: ${formatMoney(otherExpense)}"
             )
         )
+
+        root.addView(
+            button("💵 Вказати початкові вкладення") {
+
+                val input = editText(
+                    "Сума вкладень, грн",
+                    true
+                )
+
+                input.setText(
+                    prefs.getFloat(
+                        "investment",
+                        0f
+                    ).takeIf { it > 0f }?.toString() ?: ""
+                )
+
+                AlertDialog.Builder(this)
+                    .setTitle("Початкові вкладення")
+                    .setView(input)
+                    .setPositiveButton("Зберегти") { _, _ ->
+
+                        val value =
+                            input.text.toString()
+                                .replace(",", ".")
+                                .toFloatOrNull() ?: 0f
+
+                        prefs.edit()
+                            .putFloat(
+                                "investment",
+                                value
+                            )
+                            .apply()
+
+                        reportScreen()
+                    }
+                    .setNegativeButton("Скасувати", null)
+                    .show()
+            }
+        )
+
+        root.addView(
+            subtitle(
+                "💰 Початкові вкладення: ${formatMoney(investment)}\n" +
+                        "⏱ Орієнтовна окупність: $paybackText"
+            )
+        )
+
+        root.addView(
+            button("📅 Переглянути місячну таблицю") {
+                monthlyTableScreen()
+            }
+        )
+
+        root.addView(
+            button("📈 Графік по днях") {
+                dailyGraphScreen()
+            }
+        )
+
+        root.addView(
+            button("📊 Графік по місяцях") {
+                monthlyGraphScreen()
+            }
+        )
+
+        root.addView(
+            button("⬅ Назад") {
+                showMainMenu()
+            }
+        )
+
+        scroll.addView(root)
+        setContent(scroll)
     }
 
-    private fun getDailyGraphData():
-            List<Pair<String, Double>> {
+    // ------------------------------------------------------------
+    // ДАНІ ДЛЯ ГРАФІКА ПО ДНЯХ
+    // ------------------------------------------------------------
 
-        val map =
-            mutableMapOf<String, Double>()
+    private fun dailyValues(): List<Pair<String, Double>> {
 
-        val operations =
-            getOperations()
+        val operations = getOperations()
 
-        for (i in 0 until operations.length) {
+        val map = linkedMapOf<String, Double>()
 
-            val obj =
-                operations.getJSONObject(i)
+        val sortedDates = operations
+            .map { it.date }
+            .distinct()
+            .sortedWith(
+                compareBy {
+                    parseDateForSort(it)
+                }
+            )
 
-            val date =
-                obj.optString("date")
+        for (date in sortedDates) {
 
-            val type =
-                obj.optString("type")
-
-            val amount =
-                obj.optDouble(
-                    "amount",
-                    0.0
-                )
+            val dayOperations =
+                operations.filter { it.date == date }
 
             var value = 0.0
 
-            when (type) {
+            for (op in dayOperations) {
 
-                "Продаж яєць",
-                "Продаж птиці",
-                "Інший дохід" -> {
-                    value = amount
-                }
-
-                "Купівля корму",
-                "Інші витрати",
-                "Інкубація" -> {
-                    value = -amount
+                if (isIncome(op.type)) {
+                    value += op.amount
+                } else {
+                    value -= op.amount
                 }
             }
 
-            map[date] =
-                (map[date] ?: 0.0) + value
+            map[date] = value
         }
 
-        return map
-            .toList()
-            .sortedBy {
-                try {
-                    dateFormat.parse(it.first)
-                } catch (_: Exception) {
-                    Date(0)
-                }
-            }
+        return map.toList()
     }
 
-    // =========================================================
-    // ПІДСУМОК
-    // =========================================================
+    // ------------------------------------------------------------
+    // ГРАФІК ПО ДНЯХ
+    // ------------------------------------------------------------
 
-    private fun report() {
+    private fun dailyGraphScreen() {
 
-        content.removeAllViews()
-        backButton()
+        val scroll = scrollLayout()
+        val root = rootLayout()
 
-        val operations =
-            getOperations()
+        root.addView(title("📈 Результат по днях"))
 
-        var income = 0.0
-        var expenses = 0.0
+        val data = dailyValues()
 
-        for (i in 0 until operations.length) {
+        if (data.isEmpty()) {
 
-            val obj =
-                operations.getJSONObject(i)
-
-            val type =
-                obj.optString("type")
-
-            val amount =
-                obj.optDouble(
-                    "amount",
-                    0.0
+            root.addView(
+                subtitle(
+                    "Ще немає операцій для побудови графіка."
                 )
+            )
 
-            when (type) {
+        } else {
 
-                "Продаж яєць",
-                "Продаж птиці",
-                "Інший дохід" -> {
-                    income += amount
-                }
+            val graph = SimpleGraphView(
+                this,
+                data
+            )
 
-                "Купівля корму",
-                "Інші витрати",
-                "Інкубація" -> {
-                    expenses += amount
-                }
-            }
-        }
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(350)
+            )
 
-        val profit =
-            income - expenses
+            graph.layoutParams = params
 
-        val investment =
-            getDoubleValue("investment")
+            root.addView(graph)
 
-        val title =
-            TextView(this)
+            for (item in data) {
 
-        title.text =
-            "💰 ПІДСУМОК"
+                val sign =
+                    if (item.second >= 0.0) "+" else ""
 
-        title.textSize = 28f
-        title.setTypeface(
-            null,
-            Typeface.BOLD
-        )
-        title.gravity =
-            Gravity.CENTER
-
-        content.addView(title)
-
-        val info =
-            TextView(this)
-
-        info.text =
-            "\n💰 Загальний дохід: " +
-                    "${format(income)} грн\n\n" +
-
-                    "💸 Загальні витрати: " +
-                    "${format(expenses)} грн\n\n" +
-
-                    "📈 Чистий результат: " +
-                    "${format(profit)} грн\n\n" +
-
-                    "🏗 Початкові вкладення: " +
-                    "${format(investment)} грн\n\n" +
-
-                    "📒 Кількість операцій: " +
-                    operations.length
-
-        info.textSize = 19f
-
-        content.addView(info)
-
-        addMainButton("✏️ Початкові вкладення") {
-
-            val input =
-                createInput(
-                    "Сума вкладень",
-                    investment.toString()
-                )
-
-            AlertDialog.Builder(this)
-                .setTitle(
-                    "🏗 Початкові вкладення"
-                )
-                .setView(input)
-                .setNegativeButton(
-                    "Скасувати",
-                    null
-                )
-                .setPositiveButton(
-                    "Зберегти"
-                ) { _, _ ->
-
-                    save(
-                        "investment",
-                        input.text.toString()
+                root.addView(
+                    subtitle(
+                        "${item.first}: $sign${formatMoney(item.second)}"
                     )
-
-                    report()
-                }
-                .show()
-        }
-    }
-
-    // =========================================================
-    // ОЧИЩЕННЯ
-    // =========================================================
-
-    private fun clearAllData() {
-
-        AlertDialog.Builder(this)
-            .setTitle(
-                "🗑 Очистити всі дані?"
-            )
-            .setMessage(
-                "Будуть видалені всі дані " +
-                        "та щоденні операції."
-            )
-            .setNegativeButton(
-                "Скасувати",
-                null
-            )
-            .setPositiveButton(
-                "Очистити"
-            ) { _, _ ->
-
-                prefs.edit()
-                    .clear()
-                    .apply()
-
-                showHome()
-
-                Toast.makeText(
-                    this,
-                    "✅ Дані очищено",
-                    Toast.LENGTH_SHORT
-                ).show()
+                )
             }
-            .show()
-    }
+        }
 
-    // =========================================================
-    // ДОПОМІЖНІ ФУНКЦІЇ
-    // =========================================================
-
-    private fun createInput(
-        hint: String,
-        value: String = ""
-    ): EditText {
-
-        val edit =
-            EditText(this)
-
-        edit.hint = hint
-        edit.setText(value)
-
-        edit.inputType =
-            InputType.TYPE_CLASS_NUMBER or
-                    InputType.TYPE_NUMBER_FLAG_DECIMAL
-
-        edit.setPadding(
-            dp(10),
-            dp(10),
-            dp(10),
-            dp(10)
+        root.addView(
+            button("⬅ Назад") {
+                showMainMenu()
+            }
         )
 
-        return edit
+        scroll.addView(root)
+        setContent(scroll)
     }
 
-    private fun save(
-        key: String,
-        value: String
-    ) {
+    // ------------------------------------------------------------
+    // ДАНІ ДЛЯ МІСЯЧНОГО ГРАФІКА
+    // ------------------------------------------------------------
 
-        prefs.edit()
-            .putString(key, value)
-            .apply()
-    }
+    private fun monthlyValues(): List<Pair<String, Double>> {
 
-    private fun getStringValue(
-        key: String,
-        default: String = ""
-    ): String {
+        val operations = getOperations()
 
-        return prefs.getString(
-            key,
-            default
-        ) ?: default
-    }
-
-    private fun getDoubleValue(
-        key: String
-    ): Double {
-
-        return prefs
-            .getString(
-                key,
-                "0"
+        val months = operations
+            .map { monthFromDate(it.date) }
+            .distinct()
+            .sortedWith(
+                compareBy {
+                    parseMonthForSort(it)
+                }
             )
-            ?.toDoubleOrNull()
-            ?: 0.0
+
+        val result = mutableListOf<Pair<String, Double>>()
+
+        for (month in months) {
+
+            var income = 0.0
+            var expense = 0.0
+
+            for (op in operations) {
+
+                if (monthFromDate(op.date) == month) {
+
+                    if (isIncome(op.type)) {
+                        income += op.amount
+                    } else {
+                        expense += op.amount
+                    }
+                }
+            }
+
+            result.add(
+                Pair(
+                    month,
+                    income - expense
+                )
+            )
+        }
+
+        return result
     }
 
-    private fun format(
-        number: Double
-    ): String {
+    // ------------------------------------------------------------
+    // МІСЯЧНИЙ ГРАФІК
+    // ------------------------------------------------------------
 
-        return String.format(
-            Locale.getDefault(),
-            "%.2f",
-            number
+    private fun monthlyGraphScreen() {
+
+        val scroll = scrollLayout()
+        val root = rootLayout()
+
+        root.addView(title("📊 Результат по місяцях"))
+
+        val data = monthlyValues()
+
+        if (data.isEmpty()) {
+
+            root.addView(
+                subtitle(
+                    "Ще немає операцій для побудови графіка."
+                )
+            )
+
+        } else {
+
+            val graph = SimpleGraphView(
+                this,
+                data
+            )
+
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(350)
+            )
+
+            graph.layoutParams = params
+
+            root.addView(graph)
+
+            for (item in data) {
+
+                val sign =
+                    if (item.second >= 0.0) "+" else ""
+
+                root.addView(
+                    subtitle(
+                        "${item.first}: $sign${formatMoney(item.second)}"
+                    )
+                )
+            }
+        }
+
+        root.addView(
+            button("⬅ Назад") {
+                showMainMenu()
+            }
         )
+
+        scroll.addView(root)
+        setContent(scroll)
     }
 
-    private fun dp(
-        value: Int
-    ): Int {
+    // ------------------------------------------------------------
+    // ПРОСТИЙ ГРАФІК БЕЗ СТОРОННІХ БІБЛІОТЕК
+    // ------------------------------------------------------------
 
-        return (
-                value *
-                        resources.displayMetrics.density
-                ).toInt()
-    }
-
-    // =========================================================
-    // ГРАФІК
-    // =========================================================
-
-    private class GraphView(
+    class SimpleGraphView(
         context: android.content.Context,
-        private val data:
-        List<Pair<String, Double>>
+        private val data: List<Pair<String, Double>>
     ) : View(context) {
 
-        private val paint =
-            Paint(Paint.ANTI_ALIAS_FLAG)
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-        override fun onDraw(
-            canvas: Canvas
-        ) {
-
+        override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
 
             if (data.isEmpty()) {
-
-                paint.textSize = 42f
-
-                canvas.drawText(
-                    "Немає даних",
-                    40f,
-                    120f,
-                    paint
-                )
-
                 return
             }
 
-            val width =
-                width.toFloat()
+            val width = width.toFloat()
+            val height = height.toFloat()
 
-            val height =
-                height.toFloat()
-
-            val left = 60f
-            val right = width - 30f
+            val left = 70f
+            val right = width - 25f
             val top = 30f
-            val bottom = height - 50f
+            val bottom = height - 60f
 
-            var max =
-                data.maxOf {
-                    kotlin.math.abs(it.second)
-                }
-
-            if (max == 0.0)
-                max = 1.0
-
+            paint.style = Paint.Style.STROKE
             paint.strokeWidth = 3f
-            paint.style =
-                Paint.Style.STROKE
 
+            // Вісь Y
             canvas.drawLine(
                 left,
                 top,
@@ -1576,6 +1467,7 @@ class MainActivity : Activity() {
                 paint
             )
 
+            // Вісь X
             canvas.drawLine(
                 left,
                 bottom,
@@ -1584,55 +1476,59 @@ class MainActivity : Activity() {
                 paint
             )
 
-            val zeroY =
-                if (
-                    data.any { it.second < 0 } &&
-                    data.any { it.second > 0 }
-                ) {
-                    bottom -
-                            (
-                                    bottom - top
-                                    ) / 2f
+            var minValue = data.minOf { it.second }
+            var maxValue = data.maxOf { it.second }
+
+            if (minValue > 0.0) {
+                minValue = 0.0
+            }
+
+            if (maxValue < 0.0) {
+                maxValue = 0.0
+            }
+
+            if (maxValue == minValue) {
+                maxValue += 1.0
+                minValue -= 1.0
+            }
+
+            val range = maxValue - minValue
+
+            val path = Path()
+
+            for (index in data.indices) {
+
+                val x: Float
+
+                if (data.size == 1) {
+
+                    x = (left + right) / 2f
+
                 } else {
-                    bottom
+
+                    x =
+                        left +
+                                (index.toFloat() /
+                                        (data.size - 1).toFloat()) *
+                                (right - left)
                 }
 
-            paint.strokeWidth = 5f
-
-            val path =
-                Path()
-
-            for (
-                index in data.indices
-            ) {
-
-                val x =
-                    if (data.size == 1) {
-                        (left + right) / 2f
-                    } else {
-                        left +
-                                index *
-                                (right - left) /
-                                (data.size - 1)
-                    }
+                val normalized =
+                    ((data[index].second - minValue) / range)
+                        .toFloat()
 
                 val y =
-                    zeroY -
-                            (
-                                    data[index].second /
-                                            max
-                                    ) *
-                            (
-                                    bottom - top
-                                    ) / 2f
+                    bottom -
+                            normalized *
+                            (bottom - top)
 
-                if (index == 0)
+                if (index == 0) {
                     path.moveTo(x, y)
-                else
+                } else {
                     path.lineTo(x, y)
+                }
 
-                paint.style =
-                    Paint.Style.FILL
+                paint.style = Paint.Style.FILL
 
                 canvas.drawCircle(
                     x,
@@ -1640,43 +1536,110 @@ class MainActivity : Activity() {
                     7f,
                     paint
                 )
-
-                if (
-                    data.size <= 10 ||
-                    index == 0 ||
-                    index == data.lastIndex
-                ) {
-
-                    paint.textSize = 24f
-
-                    canvas.drawText(
-                        data[index].first,
-                        x - 25f,
-                        bottom + 35f,
-                        paint
-                    )
-                }
             }
 
-            paint.style =
-                Paint.Style.STROKE
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 4f
 
             canvas.drawPath(
                 path,
                 paint
             )
 
-            paint.style =
-                Paint.Style.FILL
+            // Підписи
+            paint.style = Paint.Style.FILL
+            paint.textSize = 24f
 
-            paint.textSize = 25f
+            val firstLabel = data.first().first
+            val lastLabel = data.last().first
 
             canvas.drawText(
-                "грн",
+                firstLabel,
+                left,
+                height - 15f,
+                paint
+            )
+
+            if (data.size > 1) {
+
+                val lastWidth =
+                    paint.measureText(lastLabel)
+
+                canvas.drawText(
+                    lastLabel,
+                    right - lastWidth,
+                    height - 15f,
+                    paint
+                )
+            }
+
+            // Значення зверху
+            val maxText =
+                String.format(
+                    Locale.getDefault(),
+                    "%.0f",
+                    maxValue
+                )
+
+            val minText =
+                String.format(
+                    Locale.getDefault(),
+                    "%.0f",
+                    minValue
+                )
+
+            canvas.drawText(
+                maxText,
                 5f,
                 top + 10f,
                 paint
             )
+
+            canvas.drawText(
+                minText,
+                5f,
+                bottom,
+                paint
+            )
         }
+    }
+
+    // ------------------------------------------------------------
+    // ОЧИЩЕННЯ
+    // ------------------------------------------------------------
+
+    private fun confirmClear() {
+
+        AlertDialog.Builder(this)
+            .setTitle("🗑 Очистити всі дані?")
+            .setMessage(
+                "Буде видалено поголів'я, корм, яйця,\n" +
+                        "операції, витрати та всі збережені розрахунки."
+            )
+            .setPositiveButton("Так, очистити") { _, _ ->
+
+                prefs.edit()
+                    .clear()
+                    .apply()
+
+                Toast.makeText(
+                    this,
+                    "Всі дані очищено",
+                    Toast.LENGTH_SHORT
+                ).show()
+
+                showMainMenu()
+            }
+            .setNegativeButton("Скасувати", null)
+            .show()
+    }
+
+    // ------------------------------------------------------------
+    // НАТИСКАННЯ НАЗАД
+    // ------------------------------------------------------------
+
+    override fun onBackPressed() {
+
+        showMainMenu()
     }
 }
